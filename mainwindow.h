@@ -18,14 +18,21 @@ public:
     ~MainWindow();
 
 private slots:
-    void readData();             // 시리얼 데이터 수신 처리 슬롯
+    void readDataSensor1();
+    void readDataSensor2();
 
 private:
     Ui::MainWindow *ui;
-    QSerialPort *serial;
 
-    // 수신 패킷 임시 저장 버퍼
-    QByteArray m_buffer;
+    QSerialPort *serial1;
+    QSerialPort *serial2;
+
+    QByteArray m_buffer1;
+    QByteArray m_buffer2;
+
+    // ★ 센서1, 센서2의 마지막으로 읽은 거리값을 저장할 변수
+    int sensor1Distance;
+    int sensor2Distance;
 };
 
 #endif // MAINWINDOW_H
