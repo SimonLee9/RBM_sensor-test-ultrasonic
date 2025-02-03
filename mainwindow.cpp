@@ -1,134 +1,101 @@
 #include "mainwindow.h"
-#include "ui_mainwindow.h"
-#include "radarwidget.h"
+#include <QVBoxLayout>
 #include <QDebug>
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::MainWindow)
-    , serial1(new QSerialPort(this))
-    , serial2(new QSerialPort(this))
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
-    ui->setupUi(this);
+    // UI 구성: 중앙에 센서 데이터를 표시할 QLabel 생성
+    label = new QLabel("Distance: N/A", this);
+    label->setAlignment(Qt::AlignCenter);
 
-    // RadarWidget 생성 후 중앙 위젯으로 설정
-    m_radarWidget = new RadarWidget(this);
-    // (필요시 임계거리도 설정할 수 있음: 예를 들어 500mm)
-    m_radarWidget->setThreshold(300); // 500
-    setCentralWidget(m_radarWidget);
+    QWidget *centralWidget = new QWidget(this);
+    QVBoxLayout *layout = new QVBoxLayout(centralWidget);
+    layout->addWidget(label);
+    setCentralWidget(centralWidget);
 
-    // -----------------------------
-    // (1) 센서1 시리얼 포트 설정/오픈 (좌측 센서)
-    // -----------------------------
-    serial1->setPortName("/dev/ttyUSB0"); // 예: Windows 환경, Linux는 "/dev/ttyUSB0" 등으로 수정
-    serial1->setBaudRate(QSerialPort::Baud9600);
-    serial1->setDataBits(QSerialPort::Data8);
-    serial1->setParity(QSerialPort::NoParity);
-    serial1->setStopBits(QSerialPort::OneStop);
-    serial1->setFlowControl(QSerialPort::NoFlowControl);
+    // 시리얼 포트 초기화
+    serial = new QSerialPort(this);
+    serial->setPortName("/dev/ttyUSB0"); // 실제 사용 포트명으로 수정 (예: "COM3" 또는 "/dev/ttyUSB0")
 
-    if (!serial1->open(QIODevice::ReadWrite)) {
-        qDebug() << "Failed to open port" << serial1->portName();
+    // 보오드 레이트를 230400으로 설정 (정수값 사용)
+    serial->setBaudRate(230400);
+
+    serial->setDataBits(QSerialPort::Data8);
+    serial->setParity(QSerialPort::NoParity);
+    serial->setStopBits(QSerialPort::OneStop);
+    serial->setFlowControl(QSerialPort::NoFlowControl);
+
+    if (!serial->open(QIODevice::ReadWrite)) {
+        qDebug() << "Failed to open port" << serial->portName();
     } else {
-        qDebug() << "Serial1 opened:" << serial1->portName();
-        connect(serial1, &QSerialPort::readyRead, this, &MainWindow::readDataSensor1);
+        qDebug() << "Serial port opened:" << serial->portName();
+        connect(serial, &QSerialPort::readyRead, this, &MainWindow::readSensorData);
     }
-    m_buffer1.clear();
-
-    // -----------------------------
-    // (2) 센서2 시리얼 포트 설정/오픈 (우측 센서)
-    // -----------------------------
-    serial2->setPortName("/dev/ttyUSB1"); // 예: Windows 환경, Linux는 "/dev/ttyUSB1" 등으로 수정
-    serial2->setBaudRate(QSerialPort::Baud9600);
-    serial2->setDataBits(QSerialPort::Data8);
-    serial2->setParity(QSerialPort::NoParity);
-    serial2->setStopBits(QSerialPort::OneStop);
-    serial2->setFlowControl(QSerialPort::NoFlowControl);
-
-    if (!serial2->open(QIODevice::ReadWrite)) {
-        qDebug() << "Failed to open port" << serial2->portName();
-    } else {
-        qDebug() << "Serial2 opened:" << serial2->portName();
-        connect(serial2, &QSerialPort::readyRead, this, &MainWindow::readDataSensor2);
-    }
-    m_buffer2.clear();
 }
 
 MainWindow::~MainWindow()
 {
-    if (serial1->isOpen()) serial1->close();
-    if (serial2->isOpen()) serial2->close();
-    delete ui;
+    if (serial->isOpen())
+        serial->close();
 }
 
-// -----------------------------------------
-// 센서1 데이터 수신 및 파싱 (좌측 센서)
-// -----------------------------------------
-void MainWindow::readDataSensor1()
+void MainWindow::readSensorData()
 {
-    QByteArray data = serial1->readAll();
-    m_buffer1.append(data);
+    // 수신된 데이터를 버퍼에 추가
+    buffer.append(serial->readAll());
 
-    // DFROBOT A02YYUW 패킷: [0xFF][High Byte][Low Byte][Checksum] (4바이트)
-    while (m_buffer1.size() >= 4) {
-        if (static_cast<unsigned char>(m_buffer1.at(0)) == 0xFF) {
-            QByteArray packet = m_buffer1.left(4);
-            unsigned char startByte = static_cast<unsigned char>(packet.at(0));
-            unsigned char highByte  = static_cast<unsigned char>(packet.at(1));
-            unsigned char lowByte   = static_cast<unsigned char>(packet.at(2));
-            unsigned char checkSum  = static_cast<unsigned char>(packet.at(3));
-
-            unsigned char calcSum = (startByte + highByte + lowByte) & 0xFF;
-            if (calcSum == checkSum) {
-                // 거리 (mm) 계산
-                int distance = (highByte << 8) | lowByte;
-
-                // 좌측 센서 데이터 업데이트
-                m_radarWidget->setSensor1Distance(distance);
-
-                qDebug() << "[Sensor1]" << distance << "mm";
-
-                m_buffer1.remove(0, 4);
-            } else {
-                m_buffer1.remove(0, 1);
-            }
-        } else {
-            m_buffer1.remove(0, 1);
+    // Nova-A4 센서의 패킷 길이는 9바이트
+    while (buffer.size() >= 9) {
+        // 패킷의 첫 바이트가 Header (0xA5)인지 확인
+        if (static_cast<quint8>(buffer.at(0)) != 0xA5) {
+            // 유효하지 않은 헤더면 한 바이트 제거하여 재동기화 시도
+            buffer.remove(0, 1);
+            continue;
         }
-    }
-}
 
-// -----------------------------------------
-// 센서2 데이터 수신 및 파싱 (우측 센서)
-// -----------------------------------------
-void MainWindow::readDataSensor2()
-{
-    QByteArray data = serial2->readAll();
-    m_buffer2.append(data);
+        // 9바이트 패킷 추출
+        QByteArray packet = buffer.left(9);
+        // 패킷 구성:
+        // [0] Header    : 0xA5
+        // [1] ID        : 0x01
+        // [2] Reserve x1
+        // [3] Reserve y1
+        // [4] Distance x2 (고바이트)
+        // [5] Distance y2 (저바이트)
+        // [6] Peak x3
+        // [7] Peak y3
+        // [8] Checksum  : (0xA5 + 0x01 + x1 + y1 + x2 + y2 + x3 + y3) & 0xFF
 
-    while (m_buffer2.size() >= 4) {
-        if (static_cast<unsigned char>(m_buffer2.at(0)) == 0xFF) {
-            QByteArray packet = m_buffer2.left(4);
-            unsigned char startByte = static_cast<unsigned char>(packet.at(0));
-            unsigned char highByte  = static_cast<unsigned char>(packet.at(1));
-            unsigned char lowByte   = static_cast<unsigned char>(packet.at(2));
-            unsigned char checkSum  = static_cast<unsigned char>(packet.at(3));
+        quint8 header    = static_cast<quint8>(packet.at(0));
+        quint8 id        = static_cast<quint8>(packet.at(1));
+        quint8 reserve_x = static_cast<quint8>(packet.at(2));
+        quint8 reserve_y = static_cast<quint8>(packet.at(3));
+        quint8 dist_x    = static_cast<quint8>(packet.at(4));
+        quint8 dist_y    = static_cast<quint8>(packet.at(5));
+        quint8 peak_x    = static_cast<quint8>(packet.at(6));
+        quint8 peak_y    = static_cast<quint8>(packet.at(7));
+        quint8 checksum  = static_cast<quint8>(packet.at(8));
 
-            unsigned char calcSum = (startByte + highByte + lowByte) & 0xFF;
-            if (calcSum == checkSum) {
-                int distance = (highByte << 8) | lowByte;
+        // 체크섬 계산 (하위 8비트)
+        quint16 sum = header + id + reserve_x + reserve_y + dist_x + dist_y + peak_x + peak_y;
+        quint8 expectedChecksum = sum & 0xFF;
 
-                // 우측 센서 데이터 업데이트
-                m_radarWidget->setSensor2Distance(distance);
+        if (expectedChecksum == checksum) {
+            // 유효한 패킷인 경우: 거리(mm) 계산 (Distance는 2바이트: 고바이트, 저바이트)
+            int distance = (dist_x << 8) | dist_y;
+            qDebug() << "Valid packet received. Distance:" << distance << "mm";
+            label->setText(QString("Distance: %1 mm").arg(distance));
 
-                qDebug() << "[Sensor2]" << distance << "mm";
+            // Reserve 및 Peak 값 출력 (필요 시)
+            qDebug() << "Reserve:" << reserve_x << reserve_y
+                     << "Peak:" << peak_x << peak_y;
 
-                m_buffer2.remove(0, 4);
-            } else {
-                m_buffer2.remove(0, 1);
-            }
+            // 처리한 패킷은 버퍼에서 제거
+            buffer.remove(0, 9);
         } else {
-            m_buffer2.remove(0, 1);
+            qDebug() << "Checksum error: expected" << expectedChecksum << "got" << checksum;
+            // 체크섬 불일치 시, 첫 바이트 제거하여 재동기화 시도
+            buffer.remove(0, 1);
         }
     }
 }
