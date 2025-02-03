@@ -5,6 +5,8 @@
 #include <QSerialPort>
 #include <QByteArray>
 
+class RadarWidget;
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -24,15 +26,16 @@ private slots:
 private:
     Ui::MainWindow *ui;
 
+    // 시리얼 포트 2개
     QSerialPort *serial1;
     QSerialPort *serial2;
 
+    // 버퍼
     QByteArray m_buffer1;
     QByteArray m_buffer2;
 
-    // ★ 센서1, 센서2의 마지막으로 읽은 거리값을 저장할 변수
-    int sensor1Distance;
-    int sensor2Distance;
+    // 센서 거리값을 시각화할 위젯
+    RadarWidget *m_radarWidget;
 };
 
 #endif // MAINWINDOW_H

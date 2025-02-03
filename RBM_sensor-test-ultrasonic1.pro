@@ -10,10 +10,12 @@ CONFIG += c++17
 
 SOURCES += \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    radarwidget.cpp
 
 HEADERS += \
-    mainwindow.h
+    mainwindow.h \
+    radarwidget.h
 
 FORMS += \
     mainwindow.ui

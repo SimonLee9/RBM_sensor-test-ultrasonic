@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "radarwidget.h"
 #include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -7,14 +8,19 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
     , serial1(new QSerialPort(this))
     , serial2(new QSerialPort(this))
-    , sensor1Distance(-1)
-    , sensor2Distance(-1)
 {
     ui->setupUi(this);
 
-    // --- (1) 센서1 시리얼 포트 설정/오픈 ---
-    serial1->setPortName("/dev/ttyUSB0"); // 예: Windows에서는 COM3
+    // RadarWidget 생성하여 centralWidget으로 설정
+    m_radarWidget = new RadarWidget(this);
+    setCentralWidget(m_radarWidget);
+
+    // -----------------------------
+    // (1) 센서1 포트 설정/오픈
+    // -----------------------------
+    serial1->setPortName("/dev/ttyUSB0"); // Windows 예시
     serial1->setBaudRate(QSerialPort::Baud9600);
+    //serial1->setBaudRate(QSerialPort::Baud115200);
     serial1->setDataBits(QSerialPort::Data8);
     serial1->setParity(QSerialPort::NoParity);
     serial1->setStopBits(QSerialPort::OneStop);
@@ -23,24 +29,26 @@ MainWindow::MainWindow(QWidget *parent)
     if (!serial1->open(QIODevice::ReadWrite)) {
         qDebug() << "Failed to open port" << serial1->portName();
     } else {
-        qDebug() << "Serial port 1 opened:" << serial1->portName();
+        qDebug() << "Serial1 opened:" << serial1->portName();
         connect(serial1, &QSerialPort::readyRead, this, &MainWindow::readDataSensor1);
     }
     m_buffer1.clear();
 
-    // --- (2) 센서2 시리얼 포트 설정/오픈 ---
-    serial2->setPortName("/dev/ttyUSB1"); // 예: Windows에서는 COM4
+    // -----------------------------
+    // (2) 센서2 포트 설정/오픈
+    // -----------------------------
+    serial2->setPortName("/dev/ttyUSB1"); // Windows 예시
     serial2->setBaudRate(QSerialPort::Baud9600);
+    //serial2->setBaudRate(QSerialPort::Baud115200);
     serial2->setDataBits(QSerialPort::Data8);
     serial2->setParity(QSerialPort::NoParity);
     serial2->setStopBits(QSerialPort::OneStop);
     serial2->setFlowControl(QSerialPort::NoFlowControl);
 
-    if (!serial2->open(QIODevice::ReadWrite))
-    {
+    if (!serial2->open(QIODevice::ReadWrite)) {
         qDebug() << "Failed to open port" << serial2->portName();
     } else {
-        qDebug() << "Serial port 2 opened:" << serial2->portName();
+        qDebug() << "Serial2 opened:" << serial2->portName();
         connect(serial2, &QSerialPort::readyRead, this, &MainWindow::readDataSensor2);
     }
     m_buffer2.clear();
@@ -53,14 +61,15 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-// ---------------------------------------------------------------------------------
-// (A) 센서1 데이터 수신
-// ---------------------------------------------------------------------------------
+// -----------------------------------------
+// 센서1 데이터 수신 + 파싱
+// -----------------------------------------
 void MainWindow::readDataSensor1()
 {
     QByteArray data = serial1->readAll();
     m_buffer1.append(data);
 
+    // A02YYUW: [0xFF][High][Low][Checksum] (4바이트)
     while (m_buffer1.size() >= 4) {
         if (static_cast<unsigned char>(m_buffer1.at(0)) == 0xFF) {
             QByteArray packet = m_buffer1.left(4);
@@ -71,18 +80,19 @@ void MainWindow::readDataSensor1()
 
             unsigned char calcSum = (startByte + highByte + lowByte) & 0xFF;
             if (calcSum == checkSum) {
-                // 거리(mm) 계산
+                // 유효 거리(mm)
                 int distance = (highByte << 8) | lowByte;
-                // --- 센서1 거리 업데이트 ---
-                sensor1Distance = distance;
 
-                // --- 한 줄에 출력하기 ---
-                qDebug() << "[Sensor1]" << sensor1Distance << "mm |"
-                         << "[Sensor2]" << sensor2Distance << "mm";
+                // -> RadarWidget에 전달
+                m_radarWidget->setSensor1Distance(distance);
 
-                // 정상 패킷이므로 버퍼에서 제거
+                // 디버그 출력(선택)
+                qDebug() << "[Sensor1]" << distance << "mm";
+
+                // 버퍼에서 4바이트 제거
                 m_buffer1.remove(0, 4);
             } else {
+                // 패킷 손상 -> 1바이트씩 버퍼 제거
                 m_buffer1.remove(0, 1);
             }
         } else {
@@ -91,9 +101,9 @@ void MainWindow::readDataSensor1()
     }
 }
 
-// ---------------------------------------------------------------------------------
-// (B) 센서2 데이터 수신
-// ---------------------------------------------------------------------------------
+// -----------------------------------------
+// 센서2 데이터 수신 + 파싱
+// -----------------------------------------
 void MainWindow::readDataSensor2()
 {
     QByteArray data = serial2->readAll();
@@ -110,12 +120,10 @@ void MainWindow::readDataSensor2()
             unsigned char calcSum = (startByte + highByte + lowByte) & 0xFF;
             if (calcSum == checkSum) {
                 int distance = (highByte << 8) | lowByte;
-                // --- 센서2 거리 업데이트 ---
-                sensor2Distance = distance;
 
-                // --- 한 줄에 출력하기 ---
-                qDebug() << "[Sensor1]" << sensor1Distance << "mm |"
-                         << "[Sensor2]" << sensor2Distance << "mm";
+                m_radarWidget->setSensor2Distance(distance);
+
+                qDebug() << "[Sensor2]" << distance << "mm";
 
                 m_buffer2.remove(0, 4);
             } else {
