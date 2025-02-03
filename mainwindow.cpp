@@ -11,16 +11,17 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    // RadarWidget 생성하여 centralWidget으로 설정
+    // RadarWidget 생성 후 중앙 위젯으로 설정
     m_radarWidget = new RadarWidget(this);
+    // (필요시 임계거리도 설정할 수 있음: 예를 들어 500mm)
+    m_radarWidget->setThreshold(300); // 500
     setCentralWidget(m_radarWidget);
 
     // -----------------------------
-    // (1) 센서1 포트 설정/오픈
+    // (1) 센서1 시리얼 포트 설정/오픈 (좌측 센서)
     // -----------------------------
-    serial1->setPortName("/dev/ttyUSB0"); // Windows 예시
+    serial1->setPortName("/dev/ttyUSB0"); // 예: Windows 환경, Linux는 "/dev/ttyUSB0" 등으로 수정
     serial1->setBaudRate(QSerialPort::Baud9600);
-    //serial1->setBaudRate(QSerialPort::Baud115200);
     serial1->setDataBits(QSerialPort::Data8);
     serial1->setParity(QSerialPort::NoParity);
     serial1->setStopBits(QSerialPort::OneStop);
@@ -35,11 +36,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_buffer1.clear();
 
     // -----------------------------
-    // (2) 센서2 포트 설정/오픈
+    // (2) 센서2 시리얼 포트 설정/오픈 (우측 센서)
     // -----------------------------
-    serial2->setPortName("/dev/ttyUSB1"); // Windows 예시
+    serial2->setPortName("/dev/ttyUSB1"); // 예: Windows 환경, Linux는 "/dev/ttyUSB1" 등으로 수정
     serial2->setBaudRate(QSerialPort::Baud9600);
-    //serial2->setBaudRate(QSerialPort::Baud115200);
     serial2->setDataBits(QSerialPort::Data8);
     serial2->setParity(QSerialPort::NoParity);
     serial2->setStopBits(QSerialPort::OneStop);
@@ -62,14 +62,14 @@ MainWindow::~MainWindow()
 }
 
 // -----------------------------------------
-// 센서1 데이터 수신 + 파싱
+// 센서1 데이터 수신 및 파싱 (좌측 센서)
 // -----------------------------------------
 void MainWindow::readDataSensor1()
 {
     QByteArray data = serial1->readAll();
     m_buffer1.append(data);
 
-    // A02YYUW: [0xFF][High][Low][Checksum] (4바이트)
+    // DFROBOT A02YYUW 패킷: [0xFF][High Byte][Low Byte][Checksum] (4바이트)
     while (m_buffer1.size() >= 4) {
         if (static_cast<unsigned char>(m_buffer1.at(0)) == 0xFF) {
             QByteArray packet = m_buffer1.left(4);
@@ -80,19 +80,16 @@ void MainWindow::readDataSensor1()
 
             unsigned char calcSum = (startByte + highByte + lowByte) & 0xFF;
             if (calcSum == checkSum) {
-                // 유효 거리(mm)
+                // 거리 (mm) 계산
                 int distance = (highByte << 8) | lowByte;
 
-                // -> RadarWidget에 전달
+                // 좌측 센서 데이터 업데이트
                 m_radarWidget->setSensor1Distance(distance);
 
-                // 디버그 출력(선택)
                 qDebug() << "[Sensor1]" << distance << "mm";
 
-                // 버퍼에서 4바이트 제거
                 m_buffer1.remove(0, 4);
             } else {
-                // 패킷 손상 -> 1바이트씩 버퍼 제거
                 m_buffer1.remove(0, 1);
             }
         } else {
@@ -102,7 +99,7 @@ void MainWindow::readDataSensor1()
 }
 
 // -----------------------------------------
-// 센서2 데이터 수신 + 파싱
+// 센서2 데이터 수신 및 파싱 (우측 센서)
 // -----------------------------------------
 void MainWindow::readDataSensor2()
 {
@@ -121,6 +118,7 @@ void MainWindow::readDataSensor2()
             if (calcSum == checkSum) {
                 int distance = (highByte << 8) | lowByte;
 
+                // 우측 센서 데이터 업데이트
                 m_radarWidget->setSensor2Distance(distance);
 
                 qDebug() << "[Sensor2]" << distance << "mm";

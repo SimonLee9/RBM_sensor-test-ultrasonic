@@ -26,15 +26,15 @@ private slots:
 private:
     Ui::MainWindow *ui;
 
-    // 시리얼 포트 2개
+    // 두 개의 시리얼 포트 (센서1: 좌측, 센서2: 우측)
     QSerialPort *serial1;
     QSerialPort *serial2;
 
-    // 버퍼
+    // 수신 버퍼
     QByteArray m_buffer1;
     QByteArray m_buffer2;
 
-    // 센서 거리값을 시각화할 위젯
+    // 센서 데이터를 표시할 커스텀 위젯
     RadarWidget *m_radarWidget;
 };
 
