@@ -82,7 +82,7 @@ void MainWindow::readSensorData()
 
         if (expectedChecksum == checksum) {
             // 유효한 패킷인 경우: 거리(mm) 계산 (Distance는 2바이트: 고바이트, 저바이트)
-            int distance = (dist_x << 8) | dist_y;
+            int distance = (dist_y << 8) | dist_x;
             qDebug() << "Valid packet received. Distance:" << distance << "mm";
             label->setText(QString("Distance: %1 mm").arg(distance));
 
